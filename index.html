@@ -41,16 +41,23 @@
         .search-box:focus {
             box-shadow: 0 0 8px rgba(52, 152, 219, 0.4);
         }
+        .top-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
         .auth-box {
             background: #fdfefe;
             padding: 12px 15px;
             border-radius: 8px;
-            margin-bottom: 15px;
             border: 1px dashed #3498db;
             display: flex;
             align-items: center;
             gap: 10px;
             font-size: 14px;
+            flex: 1;
+            min-width: 280px;
         }
         .auth-box input {
             padding: 8px;
@@ -65,6 +72,21 @@
             border-radius: 4px;
             cursor: pointer;
             font-weight: bold;
+        }
+        .github-download-btn {
+            background: #00897b;
+            color: white;
+            border: none;
+            padding: 0 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            white-space: nowrap;
+            transition: background 0.2s;
+        }
+        .github-download-btn:hover {
+            background: #00695c;
         }
         .add-form-box {
             background: #f9f9f9;
@@ -158,10 +180,13 @@
     
     <input type="text" id="searchInput" class="search-box" placeholder="이름을 입력하세요 (예: 김명숙, 1독)..." oninput="filterTable()">
     
-    <div class="auth-box" id="authBox">
-        <span>🔒 새글을 추가하려면 비밀번호를 입력하세요:</span>
-        <input type="password" id="accessPassword" placeholder="비밀번호 입력">
-        <button onclick="checkPassword()">확인</button>
+    <div class="top-buttons">
+        <div class="auth-box" id="authBox">
+            <span>🔒 새글을 추가하려면 비밀번호:</span>
+            <input type="password" id="accessPassword" placeholder="비밀번호">
+            <button onclick="checkPassword()">확인</button>
+        </div>
+        <button class="github-download-btn" onclick="checkAuthAndExecute(downloadGithubData)">☁️ bible_data.json 다운로드</button>
     </div>
 
     <div class="add-form-box" id="addFormBox">
@@ -196,7 +221,7 @@
 
 <script>
  const defaultData = [
-    { "name": "강옥자", "round": "1독", "detail": "'19.01.01 ~ '19.04.05" },
+   { "name": "강옥자", "round": "1독", "detail": "'19.01.01 ~ '19.04.05" },
     { "name": "강옥자", "round": "2독", "detail": "'18.01.01 ~ '18.12.31" },
     { "name": "고란숙", "round": "1독", "detail": "'21.05 ~ '22.01.25" },
     { "name": "고란숙", "round": "2독", "detail": "미기재 ~ '20.02.21" },
@@ -748,14 +773,13 @@
 ];
 
     let rawData = [];
+    const ADMIN_PASSWORD = "8597";
 
-    // 회차 문자열(예: "9독")에서 숫자만 추출하여 정렬용 숫자로 반환하는 함수
     function parseRoundNumber(roundStr) {
         const match = roundStr.match(/\d+/);
         return match ? parseInt(match[0], 10) : 0;
     }
 
-    // 이름순 정렬 후, 같은 이름 안에서 회차순(오름차순)으로 정렬하는 함수
     function sortData(data) {
         return data.sort((a, b) => {
             if (a.name !== b.name) {
@@ -765,26 +789,43 @@
         });
     }
 
-    function loadData() {
-        const saved = localStorage.getItem('bibleReadingData_v4');
+    async function loadData() {
+        rawData = loadEventsFromStorage();
+        try {
+            const res = await fetch(`./bible_data.json?v=${Date.now()}`);
+            if (res.ok) {
+                const serverData = await res.json();
+                if (Array.isArray(serverData) && serverData.length > 0) {
+                    rawData = sortData(serverData);
+                    saveEventsToStorage(rawData);
+                }
+            }
+        } catch (e) {
+            console.warn('서버 파일을 불러오지 못해 로컬/기본 데이터를 사용합니다.');
+        }
+        renderTable(rawData);
+    }
+
+    function loadEventsFromStorage() {
+        const saved = localStorage.getItem('bibleReadingData_v8');
         if (saved) {
             try {
                 const parsed = JSON.parse(saved);
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    rawData = sortData(parsed);
-                } else {
-                    rawData = sortData([...defaultData]);
+                    return sortData(parsed);
                 }
-            } catch (e) {
-                rawData = sortData([...defaultData]);
-            }
-        } else {
-            rawData = sortData([...defaultData]);
+            } catch (e) {}
         }
+        return sortData([...defaultData]);
+    }
+
+    function saveEventsToStorage(data) {
+        try {
+            localStorage.setItem('bibleReadingData_v8', JSON.stringify(data));
+        } catch (e) {}
     }
 
     loadData();
-    renderTable(rawData);
 
     function renderTable(dataList) {
         const tbody = document.getElementById('tableBody');
@@ -809,13 +850,23 @@
 
     function checkPassword() {
         const pwInput = document.getElementById('accessPassword').value;
-        if (pwInput === "8597") {
+        if (pwInput === ADMIN_PASSWORD) {
             document.getElementById('authBox').style.display = 'none';
             document.getElementById('addFormBox').style.display = 'block';
             alert("인증되었습니다. 새 기록을 추가하실 수 있습니다.");
         } else {
             alert("비밀번호가 틀렸습니다!");
             document.getElementById('accessPassword').value = '';
+        }
+    }
+
+    function checkAuthAndExecute(callback) {
+        const pwd = prompt("관리자 비밀번호를 입력하세요:");
+        if (pwd === null) return;
+        if (pwd === ADMIN_PASSWORD) {
+            callback();
+        } else {
+            alert("비밀번호가 일치하지 않습니다.");
         }
     }
 
@@ -830,12 +881,10 @@
         }
 
         const newItem = { name: name, round: round, detail: detail };
-        rawData.push(newItem); // 배열에 추가
-
-        // 추가 후 전체 데이터를 이름순 + 회차 오름차순으로 완벽하게 재정렬
+        rawData.push(newItem);
         rawData = sortData(rawData);
 
-        localStorage.setItem('bibleReadingData_v4', JSON.stringify(rawData));
+        saveEventsToStorage(rawData);
 
         document.getElementById('newName').value = '';
         document.getElementById('newRound').value = '';
@@ -843,7 +892,22 @@
         document.getElementById('searchInput').value = '';
 
         renderTable(rawData);
-        alert("새로운 통독 기록이 성공적으로 추가되어 올바른 위치에 정렬되었습니다!");
+        alert("새로운 통독 기록이 성공적으로 추가되어 정렬되었습니다!\n깃허브에 올리시려면 상단의 'bible_data.json 다운로드' 버튼을 눌러 파일을 갱신해주세요.");
+    }
+
+    function downloadGithubData() {
+        saveEventsToStorage(rawData);
+        const dataStr = JSON.stringify(rawData, null, 2);
+        const blob = new Blob([dataStr], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.href = url;
+        downloadAnchor.download = "bible_data.json";
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+        URL.revokeObjectURL(url);
+        alert("bible_data.json 파일이 다운로드되었습니다.\n이 파일을 깃허브 저장소에 업로드(Commit)하세요!");
     }
 
     function filterTable() {
